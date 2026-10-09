@@ -25,44 +25,35 @@ uploaded_file = st.file_uploader(
 if uploaded_file is not None:
   try:
     reader = PdfReader(uploaded_file)
-    layout_text = ""
+    full_text = ""
     for page in reader.pages:
-      layout_text += page.extract_text(extraction_mode="layout") + "\n"
+      full_text += page.extract_text() + "\n"
 
-    lines = layout_text.split("\n")
+    lines = [l.strip() for l in full_text.split("\n") if l.strip()]
     parsed_notes = []
 
-    for line in lines:
-      # Identifica a linha que contém o número da nota (formato numérico)
-      match_nota = re.search(r"\b(\d{7})\b", line)
-      if match_nota:
-        num_nota = match_nota.group(1)
-
-        dates = re.findall(r"\d{2}/\d{2}/\d{4}", line)
-        vals = re.findall(r"\b\d{1,3}(?:\.\d{3})*,\d{2}\b", line)
-
-        data_emissao = dates[0] if dates else ""
-        valor_str = vals[-1] if vals else "0,00"
-
-        # Extração do nome do destinatário na linha
-        parts = line.split()
-        text_tokens = [
-            p
-            for p in parts
-            if not re.match(
-                r"^\d{2}/\d{2}/\d{4}$|^\d+([.,]\d+)?$|^AUTORIZADA$|^PAGO$", p
-            )
-        ]
-        destinatario = " ".join(text_tokens)
-        if not destinatario or len(destinatario) < 3:
-          destinatario = "DESTINATARIO GERAL"
+    i = 0
+    while i < len(lines):
+      # Identifica a linha que contém o número da nota (7 dígitos)
+      if re.match(r"^\d{7}$", lines[i]):
+        num_nota = lines[i]
+        serie_gta = lines[i + 1] if i + 1 < len(lines) else ""
+        data_emissao = lines[i + 2] if i + 2 < len(lines) else ""
+        situacao_nota = lines[i + 3] if i + 3 < len(lines) else ""
+        ie_dest = lines[i + 4] if i + 4 < len(lines) else ""
+        cpf_cnpj = lines[i + 5] if i + 5 < len(lines) else ""
+        destinatario = lines[i + 6] if i + 6 < len(lines) else ""
+        valor_total = lines[i + 7] if i + 7 < len(lines) else ""
 
         parsed_notes.append({
             "nota": num_nota,
             "data": data_emissao,
             "destinatario": destinatario.strip(),
-            "valor": valor_str,
+            "valor": valor_total.strip(),
         })
+        i += 8
+      else:
+        i += 1
 
     df_dest = pd.DataFrame(parsed_notes)
 
@@ -91,7 +82,11 @@ if uploaded_file is not None:
           data = row["data"]
           nota = row["nota"]
           dest = row["destinatario"]
-          val_clean = row["valor"].replace(".", "").replace(",", ".")
+
+          # Limpeza do valor monetário (ex: 119.063,10 -> 119063.10)
+          val_clean = (
+              row["valor"].replace(".", "").replace(",", ".").replace("R$", "")
+          )
           try:
             val_num = float(val_clean)
           except:
